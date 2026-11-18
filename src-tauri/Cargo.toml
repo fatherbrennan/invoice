@@ -1,0 +1,28 @@
+[package]
+name = "invoice"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.94"
+
+[lib]
+name = "invoice_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "=2.7.4", features = [] }
+
+[dependencies]
+tauri = { version = "=2.12.5", features = [] }
+tauri-plugin-opener = "=2.7.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "=0.42.0", features = ["bundled"] }
+genpdf = { version = "=0.2.0", features = ["images"] }
+rfd = "=0.18.0"
+lopdf = "=0.47.0"
+open = "5"
+base64 = "=0.22.1"
+tempfile = "3"
+zip = { version = "=9.7.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+subsetter = { version = "=0.2.6", default-features = false }
+

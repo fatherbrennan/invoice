@@ -1,0 +1,14 @@
+{
+  "profile": {
+    "name": "Example Studio", "abn": "51824753556", "address": "1 Sample Street, Adelaide SA 5000",
+    "paymentDetails": "Synthetic payment reference only", "gstRegistered": true, "showItemGst": true
+  },
+  "customer": { "id": "abc", "code": "ABC", "name": "Example ABC", "abn": "", "address": "2 Sample Street", "nextNumber": 1 },
+  "draft": { "id": "draft-1", "customerId": "abc", "date": "2026-11-15", "notes": "Synthetic fixture",
+    "lines": [
+      { "description": "Consulting", "quantity": "1", "unitPrice": "100.00", "tax": "taxable" },
+      { "description": "GST-free supply", "quantity": "1", "unitPrice": "20.00", "tax": "gstFree" }
+    ]
+  },
+  "expected": { "net": 12000, "gst": 1000, "total": 13000 }
+}

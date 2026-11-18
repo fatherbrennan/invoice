@@ -1,0 +1,153 @@
+name: Manual desktop release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing application version as vX.Y.Z (no version bump)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: invoice-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.tag }}
+  RUSTUP_TOOLCHAIN: 1.94.0
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1, Node 24
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0, Node 24
+        with:
+          node-version: 22.22.0
+          package-manager-cache: false
+      - run: node scripts/release.mjs validate "$RELEASE_TAG"
+      - run: node scripts/release.mjs absent "$RELEASE_TAG"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  build:
+    needs: validate
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            platform: windows-x64
+            bundles: nsis
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            platform: macos-arm64
+            bundles: app,dmg
+            dmg_arch: aarch64
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            platform: macos-x64
+            bundles: app,dmg
+            dmg_arch: x64
+    runs-on: ${{ matrix.runner }}
+    env:
+      BUILD_TARGET: ${{ matrix.target }}
+      RELEASE_PLATFORM: ${{ matrix.platform }}
+      BUNDLES: ${{ matrix.bundles }}
+      DMG_ARCH: ${{ matrix.dmg_arch }}
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.22.0
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0, Node 24
+        with:
+          bun-version: 1.4.4
+      - name: Install fixed Rust toolchain
+        run: rustup toolchain install 1.94.0 --profile minimal --target "$BUILD_TARGET"
+      - name: Install locked dependencies and verify
+        run: |
+          bun install --frozen-lockfile
+          node scripts/native.mjs cargo fetch --locked --manifest-path src-tauri/Cargo.toml
+          bun run check
+          bun run lint
+          node --test scripts/*.test.mjs
+          node scripts/native.mjs cargo test --locked --manifest-path src-tauri/Cargo.toml --target "$BUILD_TARGET"
+      - name: Build native installer
+        run: bun run package --ci --target "$BUILD_TARGET" --bundles "$BUNDLES" -- --locked
+      - name: Stage only platform installers
+        run: |
+          VERSION=$(node scripts/release.mjs validate "$RELEASE_TAG")
+          BUNDLE="src-tauri/target/$BUILD_TARGET/release/bundle"
+          mkdir release-assets
+          if [[ "$RELEASE_PLATFORM" == windows-x64 ]]; then
+            cp "$BUNDLE/nsis/Invoice_${VERSION}_x64-setup.exe" "release-assets/Invoice_${VERSION}_windows-x64_setup.exe"
+          else
+            codesign --verify --deep --strict "$BUNDLE/macos/Invoice.app"
+            codesign --display --verbose=4 "$BUNDLE/macos/Invoice.app" 2>&1 | grep 'Signature=adhoc'
+            cp "$BUNDLE/dmg/Invoice_${VERSION}_${DMG_ARCH}.dmg" "release-assets/Invoice_${VERSION}_${RELEASE_PLATFORM}.dmg"
+            ditto -c -k --sequesterRsrc --keepParent "$BUNDLE/macos/Invoice.app" "release-assets/Invoice_${VERSION}_${RELEASE_PLATFORM}.app.zip"
+          fi
+          node scripts/release.mjs assets "$RELEASE_TAG" release-assets "$RELEASE_PLATFORM"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2, Node 24
+        with:
+          name: release-${{ matrix.platform }}
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  publish:
+    needs: [validate, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.22.0
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2, Node 24
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+      - name: Validate complete asset set and refuse existing release
+        run: |
+          node scripts/release.mjs assets "$RELEASE_TAG" release-assets
+          node scripts/release.mjs absent "$RELEASE_TAG"
+      - name: Create tag and draft, attach all assets, then publish
+        # A failed upload can leave a tag/draft. Reruns refuse it; inspect it before manual cleanup.
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$GITHUB_SHA"
+          gh release create "$RELEASE_TAG" --verify-tag --draft --target "$GITHUB_SHA" --title "Invoice $RELEASE_TAG" --notes 'Local desktop Invoice for Windows x64 and macOS Apple Silicon/Intel. Windows is unsigned and bundles offline WebView2. macOS requires 11 or later, uses ad-hoc signatures and is not notarized; operating-system security warnings apply. Export files contain private user data.'
+          gh release upload "$RELEASE_TAG" release-assets/*
+          gh release view "$RELEASE_TAG" --json assets > "$RUNNER_TEMP/release.json"
+          node scripts/release.mjs remote-assets "$RELEASE_TAG" release-assets "$RUNNER_TEMP/release.json"
+          gh release edit "$RELEASE_TAG" --draft=false

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.6.7/schema.json",
+  "files": {
+    "includes": ["src/**", "scripts/**", "*.json", "*.js", "*.ts", "!bun.lock"]
+  },
+  "formatter": { "indentStyle": "space" },
+  "javascript": { "formatter": { "quoteStyle": "single" } },
+  "html": { "experimentalFullSupportEnabled": true },
+  "linter": { "enabled": true, "rules": { "preset": "recommended" } }
+}

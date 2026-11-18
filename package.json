@@ -1,0 +1,37 @@
+{
+  "name": "invoice-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.4",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "build:release": "node scripts/native.mjs bun tauri build --no-bundle -- --locked",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "lint": "biome check src scripts package.json vite.config.ts tsconfig.json biome.json",
+    "test": "node --test scripts/*.test.mjs && node scripts/native.mjs cargo test --manifest-path src-tauri/Cargo.toml",
+    "desktop": "node scripts/native.mjs bun tauri dev",
+    "package": "node scripts/native.mjs bun tauri build",
+    "test:desktop": "node scripts/native.mjs bun tauri build --debug --no-bundle && node scripts/acceptance.mjs && node scripts/ui-acceptance.mjs --files && node scripts/ui-acceptance.mjs --rows && node scripts/ui-acceptance.mjs --ledger && node scripts/ui-acceptance.mjs"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.12.4",
+    "pdfjs-dist": "6.5.438",
+    "valibot": "1.4.2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.7",
+    "@opentelemetry/api": "1.10.0",
+    "@sveltejs/adapter-static": "4.0.1",
+    "@sveltejs/kit": "3.2.0",
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "@tauri-apps/cli": "2.12.4",
+    "@types/node": "22.20.5",
+    "playwright": "1.65.1",
+    "svelte": "5.57.3",
+    "svelte-check": "4.7.8",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "vite": "8.3.8"
+  }
+}
